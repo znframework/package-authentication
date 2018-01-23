@@ -16,6 +16,13 @@ class User extends UnitTest
     const unit =
     [
         'class'   => 'User',
-        'methods' => []
+        'methods' => 
+        [
+            'register' => [['username' => 'exampleuser', 'password' => 'examplepassword']],
+            'login'    => ['exampleuser', 'examplepassword'],
+            'data'     => [],
+            'update'   => ['examplepassword', 'examplepassword2', 'examplepassword2'],
+            'logout'   => []
+        ]
     ];
 }
