@@ -31,8 +31,10 @@ class UserExtends
      */
     public function __construct()
     {
-        $this->getConfig    = Config::default(new AuthenticationDefaultConfiguration)::get('Authentication');
-        $this->getLang      = Lang::default(new AuthenticationDefaultLanguage)::select('Authentication');
+        $this->getConfig    = Config::default('ZN\Authentication\AuthenticationDefaultConfiguration')
+                                    ::get('Authentication');
+        $this->getLang      = Lang::default('ZN\Authentication\AuthenticationDefaultLanguage')
+                                  ::select('Authentication');
         $this->dbClass      = Singleton::class('ZN\Database\DB');
         $this->sessionClass = Singleton::class('ZN\Storage\Session');
         $this->cookieClass  = Singleton::class('ZN\Storage\Cookie');
