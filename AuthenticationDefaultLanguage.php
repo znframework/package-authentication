@@ -10,9 +10,9 @@
  */
 
 /**
- * Default Cookie Configuration
+ * Default Language
  * 
- * Enabled when the configuration file can not be accessed.
+ * Enabled when the language file can not be accessed.
  */
 class AuthenticationDefaultLanguage
 {
