@@ -9,7 +9,6 @@
  * @author  Ozan UYKUN [ozan@znframework.com]
  */
 
-use ZN\Request\Method;
 use ZN\Cryptography\Encode;
 
 class Login extends UserExtends
@@ -134,7 +133,7 @@ class Login extends UserExtends
             $this->sessionClass->insert($usernameColumn, $username);
             $this->sessionClass->insert($passwordColumn, $password);
 
-            if( Method::post($rememberMe) || ! empty($rememberMe) )
+            if( ! empty($rememberMe) )
             {
                 if( $this->cookieClass->select($usernameColumn) !== $username )
                 {
