@@ -64,10 +64,10 @@ class Login extends UserExtends
      * 
      * @return bool
      */
-    public function do(String $un = NULL, String $pw = NULL, $rememberMe = false) : Bool
+    public function do(String $username = NULL, String $password = NULL, $rememberMe = false) : Bool
     {
-        $un         = Properties::$parameters['username'] ?? $un;
-        $pw         = Properties::$parameters['password'] ?? $pw;
+        $username   = Properties::$parameters['username'] ?? $username;
+        $password   = Properties::$parameters['password'] ?? $password;
         $rememberMe = Properties::$parameters['remember'] ?? $rememberMe;
 
         Properties::$parameters = [];
@@ -77,74 +77,61 @@ class Login extends UserExtends
             $rememberMe = false;
         }
 
-        $username   = $un;
-        $encodeType = $this->getConfig['encode'];
-
-        $password   = ! empty($encodeType) ? Encode\Type::create($pw, $encodeType) : $pw;
-
-        # Settings
-        $tableName          = $this->getConfig['matching']['table'];
-        $getColumns         = $this->getConfig['matching']['columns'];
-        $passwordColumn     = $getColumns['password'];
-        $usernameColumn     = $getColumns['username'];
-        $emailColumn        = $getColumns['email'];
-        $bannedColumn       = $getColumns['banned'];
-        $activeColumn       = $getColumns['active'];
-        $activationColumn   = $getColumns['activation'];
+        $password   = ! empty($this->encodeType) ? Encode\Type::create($password, $this->encodeType) : $password;
 
         $this->_multiUsernameColumns($username);
 
-        $r = $this->dbClass->where($usernameColumn, $username)
-               ->get($tableName)
+        $r = $this->dbClass->where($this->usernameColumn, $username)
+               ->get($this->tableName)
                ->row();
 
-        if( ! isset($r->$passwordColumn) )
+        if( ! isset($r->{$this->passwordColumn}) )
         {
             return ! Properties::$error = $this->getLang['loginError'];
         }
 
-        $passwordControl   = $r->$passwordColumn;
+        $passwordControl   = $r->{$this->passwordColumn};
         $bannedControl     = '';
         $activationControl = '';
 
-        if( ! empty($bannedColumn) )
+        if( ! empty($this->bannedColumn) )
         {
-            $banned = $bannedColumn ;
+            $banned = $this->bannedColumn ;
             $bannedControl = $r->$banned ;
         }
 
-        if( ! empty($activationColumn) )
+        if( ! empty($this->activationColumn) )
         {
-            $activationControl = $r->$activationColumn ;
+            $activationControl = $r->{$this->activationColumn};
         }
 
-        if( ! empty($r->$usernameColumn) && $passwordControl == $password )
+        if( ! empty($r->{$this->usernameColumn}) && $passwordControl == $password )
         {
-            if( ! empty($bannedColumn) && ! empty($bannedControl) )
+            if( ! empty($this->bannedColumn) && ! empty($bannedControl) )
             {
                 return ! Properties::$error = $this->getLang['bannedError'];
             }
 
-            if( ! empty($activationColumn) && empty($activationControl) )
+            if( ! empty($this->activationColumn) && empty($activationControl) )
             {
                 return ! Properties::$error = $this->getLang['activationError'];
             }
 
-            $this->sessionClass->insert($usernameColumn, $username);
-            $this->sessionClass->insert($passwordColumn, $password);
+            $this->sessionClass->insert($this->usernameColumn, $username);
+            $this->sessionClass->insert($this->passwordColumn, $password);
 
             if( ! empty($rememberMe) )
             {
-                if( $this->cookieClass->select($usernameColumn) !== $username )
+                if( $this->cookieClass->select($this->usernameColumn) !== $username )
                 {
-                    $this->cookieClass->insert($usernameColumn, $username);
-                    $this->cookieClass->insert($passwordColumn, $password);
+                    $this->cookieClass->insert($this->usernameColumn, $username);
+                    $this->cookieClass->insert($this->passwordColumn, $password);
                 }
             }
 
-            if( ! empty($activeColumn) )
+            if( ! empty($this->activeColumn) )
             {
-                $this->dbClass->where($usernameColumn, $username)->update($tableName, [$activeColumn  => 1]);
+                $this->dbClass->where($this->usernameColumn, $username)->update($this->tableName, [$this->activeColumn  => 1]);
             }
 
             return Properties::$success = $this->getLang['loginSuccess'];
@@ -164,37 +151,33 @@ class Login extends UserExtends
      */
     public function is() : Bool
     {
-        $getColumns  = $this->getConfig['matching']['columns'];
-        $tableName   = $this->getConfig['matching']['table'];
-        $username    = $getColumns['username'];
-        $password    = $getColumns['password'];
-        $getUserData = (new Data)->get($tableName);
+        $getUserData = (new Data)->get($this->tableName);
 
-        if( ! empty($getColumns['banned']) && ! empty($getUserData->{$getColumns['banned']}) )
+        if( ! empty($this->bannedColumn) && ! empty($getUserData->{$this->bannedColumn}) )
         {
              (new Logout)->do();
         }
 
-        $cUsername  = $this->cookieClass->select($username);
-        $cPassword  = $this->cookieClass->select($password);
+        $cUsername  = $this->cookieClass->select($this->usernameColumn);
+        $cPassword  = $this->cookieClass->select($this->passwordColumn);
         $result     = NULL;
 
         if( ! empty($cUsername) && ! empty($cPassword) )
         {
-            $result = $this->dbClass->where($username, $cUsername, 'and')
-                        ->where($password, $cPassword)
-                        ->get($tableName)
+            $result = $this->dbClass->where($this->usernameColumn, $cUsername, 'and')
+                        ->where($this->passwordColumn, $cPassword)
+                        ->get($this->tableName)
                         ->totalRows();
         }
 
-        if( isset($getUserData->$username) )
+        if( isset($getUserData->{$this->usernameColumn}) )
         {
             $isLogin = true;
         }
         elseif( ! empty($result) )
         {
-            $this->sessionClass->insert($username, $cUsername);
-            $this->sessionClass->insert($password, $cPassword);
+            $this->sessionClass->insert($this->usernameColumn, $cUsername);
+            $this->sessionClass->insert($this->passwordColumn, $cPassword);
 
             $isLogin = true;
         }

@@ -9,8 +9,6 @@
  * @author  Ozan UYKUN [ozan@znframework.com]
  */
 
-use ZN\Cryptography\Encode;
-
 class Update extends UserExtends
 {
     /**
@@ -67,82 +65,113 @@ class Update extends UserExtends
      */
     public function do(String $old = NULL, String $new = NULL, String $newAgain = NULL, Array $data = []) : Bool
     {
-        if( (new Login)->is() )
+        if( $this->isLogin() )
         {
-            $old      = Properties::$parameters['oldPassword']   ?? $old;
-            $new      = Properties::$parameters['newPassword']   ?? $new;
-            $newAgain = Properties::$parameters['passwordAgain'] ?? $newAgain;
-            $data     = Properties::$parameters['column']        ?? $data;
-
-            Properties::$parameters = [];
+            $this->controlPropertiesParameters($old, $new, $newAgain, $data);
 
             if( empty($newAgain) )
             {
                 $newAgain = $new;
             }
 
-            $getColumns = $this->getConfig['matching']['columns'];
-            $getJoining = $this->getConfig['joining'];
-            $joinTables = $getJoining['tables'];
-            $jc         = $getJoining['column'];
-            $pc         = $getColumns['password'];
-            $uc         = $getColumns['username'];
-            $tn         = $this->getConfig['matching']['table'];
-            $encodeType = $this->getConfig['encode'];
+            $oldPassword      = $this->getEncryptionPassword($old);
+            $newPassword      = $this->getEncryptionPassword($new);
+            $newPasswordAgain = $this->getEncryptionPassword($newAgain);
 
-            $oldPassword      = ! empty($encodeType) ? Encode\Type::create($old, $encodeType)      : $old;
-            $newPassword      = ! empty($encodeType) ? Encode\Type::create($new, $encodeType)      : $new;
-            $newPasswordAgain = ! empty($encodeType) ? Encode\Type::create($newAgain, $encodeType) : $newAgain;
-
-            if( ! empty($joinTables) )
+            if( ! empty($this->joinTables) )
             {
                 $joinData = $data;
-                $data     = $data[$tn] ?? [$tn];
+                $data     = $data[$this->tableName] ?? [$this->tableName];
             }
 
-            $getUserData = (new Data)->get($tn);
-            $username    = $getUserData->$uc;
-            $password    = $getUserData->$pc;
+            $getUserData = $this->getUserData();
+            $username    = $getUserData->{$this->usernameColumn};
+            $password    = $getUserData->{$this->passwordColumn};
 
             if( $oldPassword != $password )
             {
-                return ! Properties::$error = $this->getLang['oldPasswordError'];
+                return $this->setErrorMessage('oldPasswordError');
             }
             elseif( $newPassword != $newPasswordAgain )
             {
-                return ! Properties::$error = $this->getLang['passwordNotMatchError'];
+                return $this->setErrorMessage('passwordNotMatchError');
             }
             else
             {
-                $data[$pc] = $newPassword;
-                $data[$uc] = $username;
+                $data[$this->passwordColumn] = $newPassword;
+                $data[$this->usernameColumn] = $username;
 
-                if( ! empty($joinTables) )
+                if( ! empty($this->joinTables) )
                 {
-                    $joinCol = $this->dbClass->where($uc, $username)->get($tn)->row()->$jc;
+                    $joinCol = $this->getJoinColumnByUsername($username);
 
-                    foreach( $joinTables as $table => $joinColumn )
+                    foreach( $this->joinTables as $table => $joinColumn )
                     {
                         if( isset($joinData[$table]) )
                         {
-                            $this->dbClass->where($joinColumn, $joinCol)->update($table, $joinData[$table]);
+                            $this->updateUserData($table, $joinColumn, $joinCol, $joinData[$table]);
                         }
                     }
                 }
                 else
                 {
-                    if( ! $this->dbClass->where($uc, $username)->update($tn, $data) )
+                    if( ! $this->updateUserData($this->tableName, $this->usernameColumn, $username, $data) )
                     {
-                        return ! Properties::$error = $this->getLang['registerUnknownError'];
+                        return $this->setErrorMessage('registerUnknownError');
                     }
                 }
 
-                return Properties::$success = $this->getLang['updateProcessSuccess'];
+                return $this->setSuccessMessage('updateProcessSuccess');
             }
         }
         else
         {
             return false;
         }
+    }
+
+    /**
+     * Protected update user data
+     */
+    protected function updateUserData($table, $column, $value, $data)
+    {
+        return $this->dbClass->where($column, $value)->update($table, $data);
+    }
+
+    /**
+     * Protected get join column by username
+     */
+    protected function getJoinColumnByUsername($username)
+    {
+        return $this->dbClass->where($this->usernameColumn, $username)->get($this->tableName)->row()->{$this->joinColumn};
+    }
+
+    /**
+     * Protected is login
+     */
+    protected function isLogin()
+    {
+        return (new Login)->is();
+    }
+
+    /**
+     * Protected get user data
+     */
+    protected function getUserData()
+    {
+        return (new Data)->get($this->tableName);
+    }
+
+    /**
+     * Protected control properties parameters
+     */
+    protected function controlPropertiesParameters(&$old, &$new, &$newAgain, &$data)
+    {
+        $old      = Properties::$parameters['oldPassword']   ?? $old;
+        $new      = Properties::$parameters['newPassword']   ?? $new;
+        $newAgain = Properties::$parameters['passwordAgain'] ?? $newAgain;
+        $data     = Properties::$parameters['column']        ?? $data;
+
+        Properties::$parameters = [];
     }
 }

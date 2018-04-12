@@ -56,41 +56,25 @@ class SendEmail extends UserExtends
      */
     public function send(String $subject, String $body, Int $count = 35)
 	{
-        $columns = $this->getConfig['matching']['columns'];
-        $table   = $this->getConfig['matching']['table'];
-        $sender  = $this->getConfig['emailSenderInfo'];
-
-        if( ! empty($columns['banned']) )
-        {
-        	$this->dbClass->where($columns['banned'], 0);
-        }
-
-        $usernamecol = $columns['username'];
-        $emailcol    = $columns['email'];
-
-        if( empty($usernamecol) )
+        if( empty($this->usernameColumn) )
         {
             return false;
         }
-
-        $result    = $this->dbClass->get($table)->result();              
-		$users     = array_chunk($result, $count);
+         
+		$users     = array_chunk($this->getUserDataResult(), $count);
 		$sendCount = count($users);
 
-		$from  = $sender['mail'];
-		$name  = $sender['name'];
-
-        $this->emailClass->sender($from, $name);
+        $this->emailClass->sender($this->senderMail, $this->senderName);
 
 		for( $i = 0; $i < $sendCount; $i++ )
 		{
 			foreach( $users[$i] as $user )
 			{
-                $username = $user->$usernamecol;
+                $username = $user->{$this->usernameColumn};
 
                 $email = IS::email($username)
                        ? $username
-                       : ($user->$emailcol ?? NULL);
+                       : ($user->{$this->emailColumn} ?? NULL);
 
                 if( IS::email($email) )
                 {
@@ -100,5 +84,18 @@ class SendEmail extends UserExtends
 
             $this->emailClass->send($subject, $body);
 		}
-	}
+    }
+    
+    /**
+     * Protected get user data result
+     */
+    protected function getUserDataResult()
+    {
+        if( ! empty($this->bannedColumn) )
+        {
+        	$this->dbClass->where($this->bannedColumn, 0);
+        }
+        
+        return $this->dbClass->get($this->tableName)->result();  
+    }
 }

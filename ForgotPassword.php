@@ -55,36 +55,28 @@ class ForgotPassword extends UserExtends
      */
     public function do(String $email = NULL, String $returnLinkPath = NULL) : Bool
     {
-        $email            = Properties::$parameters['email']        ?? $email;
-        $verification     = Properties::$parameters['verification'] ?? NULL;
-        $returnLinkPath   = Properties::$parameters['returnLink']   ?? $returnLinkPath;
+        $email          = Properties::$parameters['email']        ?? $email;
+        $verification   = Properties::$parameters['verification'] ?? NULL;
+        $returnLinkPath = Properties::$parameters['returnLink']   ?? $returnLinkPath;
 
         Properties::$parameters = [];
 
-        $tableName          = $this->getConfig['matching']['table'];
-        $senderInfo         = $this->getConfig['emailSenderInfo'];
-        $getColumns         = $this->getConfig['matching']['columns'];
-        $usernameColumn     = $getColumns['username']     ?? NULL;
-        $passwordColumn     = $getColumns['password']     ?? NULL;
-        $emailColumn        = $getColumns['email']        ?? NULL;
-        $verificationColumn = $getColumns['verification'] ?? NULL;
-
-        if( ! empty($emailColumn) )
+        if( ! empty($this->emailColumn) )
         {
-            $this->dbClass->where($emailColumn, $email);
+            $this->dbClass->where($this->emailColumn, $email);
         }
         else
         {
-            $this->dbClass->where($usernameColumn, $email);
+            $this->dbClass->where($this->usernameColumn, $email);
         }
 
-        $row = $this->dbClass->get($tableName)->row();
+        $row = $this->dbClass->get($this->tableName)->row();
 
-        if( isset($row->$usernameColumn) )
+        if( isset($row->{$this->usernameColumn}) )
         {
-            if( ! empty($verificationColumn) )
+            if( ! empty($this->verificationColumn) )
             {
-                if( $verification !== $row->$verificationColumn )
+                if( $verification !== $row->{$this->verificationColumn} )
                 {
                     return ! Properties::$error = $this->getLang['verificationOrEmailError'];
                 }
@@ -95,13 +87,14 @@ class ForgotPassword extends UserExtends
                 $returnLinkPath = URL::site($returnLinkPath);
             }
 
-            $encodeType     = $this->getConfig['encode'];
             $newPassword    = Encode\RandomPassword::create(10);
-            $encodePassword = ! empty($encodeType) ? Encode\Type::create($newPassword, $encodeType) : $newPassword;
+            $encodePassword = ! empty($this->encodeType) 
+                              ? Encode\Type::create($newPassword, $this->encodeType) 
+                              : $newPassword;
 
             $templateData = array
             (
-                'usernameColumn' => $row->$usernameColumn,
+                'usernameColumn' => $row->{$this->usernameColumn},
                 'newPassword'    => $newPassword,
                 'returnLinkPath' => $returnLinkPath
             );
@@ -110,23 +103,23 @@ class ForgotPassword extends UserExtends
 
             $emailClass = Singleton::class('ZN\Email\Sender');
 
-            $emailClass->sender($senderInfo['mail'], $senderInfo['name'])
+            $emailClass->sender($this->senderMail, $this->senderName)
                        ->receiver($email, $email)
                        ->subject($this->getLang['newYourPassword'])
                        ->content($message);
 
             if( $emailClass->send() )
             {
-                if( ! empty($emailColumn) )
+                if( ! empty($this->emailColumn) )
                 {
-                    $this->dbClass->where($emailColumn, $email, 'and');
+                    $this->dbClass->where($this->emailColumn, $email, 'and');
                 }
                 else
                 {
-                    $this->dbClass->where($usernameColumn, $email, 'and');
+                    $this->dbClass->where($this->usernameColumn, $email, 'and');
                 }
 
-                if( $this->dbClass->update($tableName, [$passwordColumn => $encodePassword]) )
+                if( $this->dbClass->update($this->tableName, [$this->passwordColumn => $encodePassword]) )
                 {
                     return Properties::$success = $this->getLang['forgotPasswordSuccess'];
                 }

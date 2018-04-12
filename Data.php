@@ -20,45 +20,21 @@ class Data extends UserExtends
      */
     public function get(String $tbl = NULL)
     {
-        $usernameColumn  = $this->getConfig['matching']['columns']['username'];
-        $passwordColumn  = $this->getConfig['matching']['columns']['password'];
-
-        $sessionUserName = $this->sessionClass->select($usernameColumn) ?: $this->cookieClass->select($usernameColumn);
-        $sessionPassword = $this->sessionClass->select($passwordColumn) ?: $this->cookieClass->select($passwordColumn);
-
-        if( ! empty($sessionUserName) )
+        if( $this->getUsernameSessionCookie() )
         {
-            $joinTables      = $this->getConfig['joining']['tables'];
-            $usernameColumn  = $this->getConfig['matching']['columns']['username'];
-            $joinColumn      = $this->getConfig['joining']['column'];
-            $tableName       = $this->getConfig['matching']['table'];
+            $r[$tbl] = $this->getUserDataRow();
 
-            $this->_multiUsernameColumns($sessionUserName);
-
-            $r[$tbl] = $this->dbClass->where($usernameColumn, $sessionUserName, 'and')
-                         ->where($passwordColumn, $sessionPassword)
-                         ->get($tableName)
-                         ->row();
-
-            if( ! empty($joinTables) )
+            if( ! empty($this->joinTables) )
             {
-                $this->_multiUsernameColumns($sessionUserName);
+                $joinCol = $r[$tbl]->{$this->joinColumn};
 
-                $joinCol = $this->dbClass->where($usernameColumn, $sessionUserName, 'and')
-                             ->where($passwordColumn, $sessionPassword)
-                             ->get($tableName)
-                             ->row()
-                             ->$joinColumn;
-
-                foreach( $joinTables as $table => $joinColumn )
+                foreach( $this->joinTables as $table => $this->joinColumn )
                 {
-                    $r[$table] = $this->dbClass->where($joinColumn, $joinCol)
-                                   ->get($table)
-                                   ->row();
+                    $r[$table] = $this->getUserDataRowByJoinTableAndColumn($table, $joinCol);
                 }
             }
 
-            if( empty($joinTables) )
+            if( empty($this->joinTables) )
             {
                 return (object) $r[$tbl];
             }
@@ -89,10 +65,9 @@ class Data extends UserExtends
      */
     public function activeCount($type = 'active') : Int
     {
-        $column    = $this->getConfig['matching']['columns'][$type];
-        $tableName = $this->getConfig['matching']['table'];
+        $column = $this->getConfig['matching']['columns'][$type];
 
-        return $this->dbClass->where($column, 1)->get($tableName)->totalRows();
+        return $this->dbClass->where($column, 1)->get($this->tableName)->totalRows();
     }
 
     /**
@@ -116,8 +91,43 @@ class Data extends UserExtends
      */
     public function count() : Int
     {
-        $tableName = $this->getConfig['matching']['table'];
+        return $this->dbClass->get($this->tableName)->totalRows();
+    }
 
-        return $this->dbClass->get($tableName)->totalRows();
+    /**
+     * Protected get user data row
+     */
+    protected function getUserDataRow()
+    {
+        $this->_multiUsernameColumns($username = $this->getUsernameSessionCookie());
+        
+        return $this->dbClass->where($this->usernameColumn, $username, 'and')
+                    ->where($this->passwordColumn, $this->getPasswordSessionCookie())
+                    ->get($this->tableName)
+                    ->row();
+    }
+
+    /**
+     * Protected get user data row by join table and column
+     */
+    protected function getUserDataRowByJoinTableAndColumn($table, $column)
+    {
+        return $this->dbClass->where($this->joinColumn, $column)->get($table)->row();
+    }
+
+    /**
+     * Protected get username session and cookie
+     */
+    protected function getUsernameSessionCookie()
+    {
+        return $this->sessionClass->select($this->usernameColumn) ?: $this->cookieClass ->select($this->usernameColumn);
+    }
+
+    /**
+     * Protected get password session cookie
+     */
+    protected function getPasswordSessionCookie()
+    {
+        return $this->sessionClass->select($this->passwordColumn) ?: $this->cookieClass ->select($this->passwordColumn);
     }
 }

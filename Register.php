@@ -16,7 +16,6 @@ use ZN\Singleton;
 use ZN\Request\URL;
 use ZN\Request\URI;
 use ZN\Response\Redirect;
-use ZN\Cryptography\Encode;
 use ZN\Authentication\Exception\ActivationColumnException;
 
 class Register extends UserExtends
@@ -46,71 +45,45 @@ class Register extends UserExtends
      */
     public function do(Array $data = NULL, $autoLogin = false, String $activationReturnLink = '') : Bool
     {
-        $data                   = Properties::$parameters['column']     ?? $data;
-        $autoLogin              = Properties::$parameters['autoLogin']  ?? $autoLogin;
-        $activationReturnLink   = Properties::$parameters['returnLink'] ?? $activationReturnLink;
-        Properties::$parameters = [];
-
-        # Settings
-        $getColumns         = $this->getConfig['matching']['columns'];
-        $getJoining         = $this->getConfig['joining'];
-        $tableName          = $this->getConfig['matching']['table'];
-        $joinTables         = $getJoining['tables'];
-        $joinColumn         = $getJoining['column'];
-        $usernameColumn     = $getColumns['username'];
-        $passwordColumn     = $getColumns['password'];
-        $emailColumn        = $getColumns['email'];
-        $activeColumn       = $getColumns['active'];
-        $activationColumn   = $getColumns['activation'];
-
-        if( ! empty($joinTables) )
+        $this->controlPropertiesParameters($data, $autoLogin, $activationReturnLink);
+        
+        if( ! empty($this->joinTables) )
         {
             $joinData = $data;
-            $data     = $data[$tableName] ?? [$tableName];
+            $data     = $data[$this->tableName] ?? [$this->tableName];
         }
 
-        if( ! isset($data[$usernameColumn]) ||  ! isset($data[$passwordColumn]) )
+        if( ! isset($data[$this->usernameColumn]) ||  ! isset($data[$this->passwordColumn]) )
         {
-            return ! Properties::$error = $this->getLang['registerUsernameError'];
+            return $this->setErrorMessage('registerUsernameError');
         }
 
-        $loginUsername   = $data[$usernameColumn];
-        $loginPassword   = $data[$passwordColumn];
-        $encodeType      = $this->getConfig['encode'];
-        $encodePassword  = ! empty($encodeType) ? Encode\Type::create($loginPassword, $encodeType) : $loginPassword;
-
-        $usernameControl = $this->dbClass->where($usernameColumn, $loginUsername)
-                                ->get($tableName)
-                                ->totalRows();
+        $loginUsername   = $data[$this->usernameColumn];
+        $loginPassword   = $data[$this->passwordColumn];
+        $encodePassword  = $this->getEncryptionPassword($loginPassword);
+        $usernameControl = $this->getTotalRowsByUsername($loginUsername);
 
         if( empty($usernameControl) )
         {
-            $data[$passwordColumn] = $encodePassword;
+            $data[$this->passwordColumn] = $encodePassword;
 
-            if( ! $this->dbClass->insert($tableName , $data) )
+            if( ! $this->registerUserInformations($data) )
             {
-                return ! Properties::$error = $this->getLang['registerUnknownError'];
+                return $this->setErrorMessage('registerUnknownError');
             }
 
-            if( ! empty($joinTables) )
+            if( ! empty($this->joinTables) )
             {
-                $joinCol = $this->dbClass->where($usernameColumn, $loginUsername)->get($tableName)->row()->$joinColumn;
-
-                foreach( $joinTables as $table => $joinColumn )
-                {
-                    $joinData[$table][$joinTables[$table]] = $joinCol;
-
-                    $this->dbClass->insert($table, $joinData[$table]);
-                }
+                $this->insertJoinUserDataByUsername($loginUsername, $joinData);
             }
 
-            Properties::$success = $this->getLang['registerSuccess'];
+            $this->setSuccessMessage('registerSuccess');
 
-            if( ! empty($activationColumn) )
+            if( ! empty($this->activationColumn) )
             {
                 if( ! IS::email($loginUsername) )
                 {
-                    $email = $data[$emailColumn];
+                    $email = $data[$this->emailColumn];
                 }
                 else
                 {
@@ -123,11 +96,11 @@ class Register extends UserExtends
             {
                 if( $autoLogin === true )
                 {
-                    (new Login)->do($loginUsername, $loginPassword);
+                    $this->doLogin($loginUsername, $loginPassword);
                 }
                 elseif( is_string($autoLogin) )
                 {
-                    new Redirect($autoLogin);
+                    $this->redirectAutoLogin($autoLogin);
                 }
             }
 
@@ -135,7 +108,7 @@ class Register extends UserExtends
         }
         else
         {
-            return ! Properties::$error = $this->getLang['registerError'];
+            return $this->setErrorMessage('registerError');
         }
     }
 
@@ -148,39 +121,27 @@ class Register extends UserExtends
      */
     public function activationComplete() : Bool
     {
-        # Settings
-        $getColumns         = $this->getConfig['matching']['columns'];
-        $tableName          = $this->getConfig['matching']['table'];
-        $usernameColumn     = $getColumns['username'];
-        $passwordColumn     = $getColumns['password'];
-        $activationColumn   = $getColumns['activation'];
-
         # Return link values.
-        $user = URI::get('user');
-        $pass = URI::get('pass');
+        $user = URI::get('user'); $pass = URI::get('pass');
 
         if( ! empty($user) && ! empty($pass) )
         {
-            $row = $this->dbClass->where($usernameColumn, $user, 'and')
-                        ->where($passwordColumn, $pass)
-                        ->get($tableName)
-                        ->row();
+            $row = $this->getUserDataByUsernameAndPassword($user, $pass);
 
             if( ! empty($row) )
             {
-                $this->dbClass->where($usernameColumn, $user)
-                              ->update($tableName, [$activationColumn => '1']);
+                $this->updateUserActivationColumnByUsername($user);
 
-                return Properties::$success = $this->getLang['activationComplete'];
+                return $this->setSuccessMessage('activationComplete');
             }
             else
             {
-                return ! Properties::$error = $this->getLang['activationCompleteError'];
+                return $this->setErrorMessage('activationCompleteError');
             }
         }
         else
         {
-            return ! Properties::$error = $this->getLang['activationCompleteError'];
+            return $this->setErrorMessage('activationCompleteError');
         }
     }
 
@@ -195,26 +156,19 @@ class Register extends UserExtends
      */
     public function resendActivationEmail(String $username, String $returnLink, String $email = NULL) : Bool
     {
-        # Settings
-        $getColumns = $this->getConfig['matching']['columns'];
-        $tableName  = $this->getConfig['matching']['table'];
-
-        if( empty($getColumns['activation']) )
+        if( empty($this->activationColumn) )
         {
             throw new ActivationColumnException();
         }
 
-        $data = $this->dbClass->where($getColumns['username'], $email ?? $username, 'and')
-                     ->where($getColumns['activation'], '0')
-                     ->get($tableName)
-                     ->row();
+        $data = $this->isResendActivationEmailByValue($email ?? $username);
         
         if( empty($data) )
         {
-            return ! Properties::$error = $this->getLang['resendActivationError'];
+            return $this->setErrorMessage('resendActivationError');
         }
         
-        return $this->_activation($username, $data->{$getColumns['password']}, $returnLink, $email);
+        return $this->_activation($username, $data->{$this->passwordColumn}, $returnLink, $email);
     }
 
     /**
@@ -236,8 +190,6 @@ class Register extends UserExtends
             $url = URL::site($url);
         }
 
-        $senderInfo = $this->getConfig['emailSenderInfo'];
-
         $templateData =
         [
             'url'  => $url,
@@ -251,18 +203,116 @@ class Register extends UserExtends
 
         $emailclass = Singleton::class('ZN\Email\Sender');
 
-        $emailclass->sender($senderInfo['mail'], $senderInfo['name'])
+        $emailclass->sender($this->senderMail, $this->senderName)
                    ->receiver($user, $user)
                    ->subject($this->getLang['activationProcess'])
                    ->content($message);
 
         if( $emailclass->send() )
         {
-            return Properties::$success = $this->getLang['activationEmail'];
+            return $this->setSuccessMessage('activationEmail');
         }
         else
         {
-            return ! Properties::$error = $this->getLang['emailError'];
+            return $this->setErrorMessage('emailError');
         }
+    }
+
+    /**
+     * Protected is resend activation email by value
+     */
+    protected function isResendActivationEmailByValue($value)
+    {
+        return $this->dbClass->where($this->usernameColumn, $value, 'and')
+                    ->where($this->activationColumn, '0')
+                    ->get($this->tableName)
+                    ->row();
+    }
+
+    /**
+     * Protected get user data by username and password
+     */
+    protected function getUserDataByUsernameAndPassword($username, $password)
+    {
+        return $this->dbClass->where($this->usernameColumn, $username, 'and')
+                             ->where($this->passwordColumn, $password)
+                             ->get($this->tableName)
+                             ->row();
+    }
+
+    /**
+     * Protected update user activation column by username
+     */
+    protected function updateUserActivationColumnByUsername($username)
+    {
+        $this->dbClass->where($this->usernameColumn, $username)
+                              ->update($this->tableName, [$this->activationColumn => '1']);
+    }
+
+    /**
+     * Protected redirect auto login
+     */
+    protected function redirectAutoLogin($path)
+    {
+        new Redirect($path);
+    }
+
+    /**
+     * Get total rows by username
+     */
+    protected function getTotalRowsByUsername($username)
+    {
+        return $this->getUserTableByUsername($username)->totalRows();
+    }
+
+    /**
+     * Get join column by username
+     */
+    protected function getJoinColumnByUsername($username)
+    {
+        return $this->getUserTableByUsername($username)->row()->{$this->joinColumn};
+    }
+
+    /**
+     * Protected insert join user data by username
+     */
+    protected function insertJoinUserDataByUsername($username, &$joinData)
+    {
+        $joinCol = getJoinColumnByUsername($username);
+
+        foreach( $this->joinTables as $table => $joinColumn )
+        {
+            $joinData[$table][$this->joinTables[$table]] = $joinCol;
+
+            $this->dbClass->insert($table, $joinData[$table]);
+        }
+    }
+
+    /**
+     * Protected register user informations
+     */
+    protected function registerUserInformations($data)
+    {
+        return $this->dbClass->insert($this->tableName, $data);
+    }
+
+    /**
+     * Protected do login
+     */
+    protected function doLogin($username, $password)
+    {
+        (new Login)->do($username, $password);
+    }
+
+    /**
+     * Protected control properties parameters
+     */
+    protected function controlPropertiesParameters(&$data, &$autoLogin, &$activationReturnLink)
+    {
+        $data                   = Properties::$parameters['column']     ?? $data;
+        $autoLogin              = Properties::$parameters['autoLogin']  ?? $autoLogin;
+        $activationReturnLink   = Properties::$parameters['returnLink'] ?? $activationReturnLink;
+
+        Properties::$parameters = [];
     }
 }

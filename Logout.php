@@ -23,26 +23,43 @@ class Logout extends UserExtends
      */
     public function do(String $redirectUrl = NULL, Int $time = 0)
     {
-        $getColumns  = $this->getConfig['matching']['columns'];
-        $tableName   = $this->getConfig['matching']['table'];
-        $username    = $getColumns['username'];
-        $password    = $getColumns['password'];
-        $active      = $getColumns['active'];
-        $getUserData = (new Data)->get($tableName)->$username ?? NULL;
-
-        if( $getUserData !== NULL )
+        if( $this->isUserStateActive() !== NULL )
         {
-            if( ! empty($active) )
+            if( ! empty($this->activeColumn) )
             {
-                $this->dbClass->where($username, $getUserData)
-                     ->update($tableName, [$active => 0]);
+                $this->setUserStatePassive($getUserData);
             }
 
-            $this->cookieClass->delete($username);
-            $this->cookieClass->delete($password);
-            $this->sessionClass->delete($username);
-
-            new Redirect((string) $redirectUrl, $time);
+            $this->endUserProcessAndRedirect((string) $redirectUrl, $time);
         }
+    }
+
+    /**
+     * Protected is user state active
+     */
+    protected function isUserStateActive()
+    {
+        return (new Data)->get($this->tableName)->{$this->usernameColumn} ?? NULL;
+    }
+
+    /**
+     * Protected set user state passive
+     */
+    protected function setUserStatePassive($username)
+    {
+        $this->dbClass->where($this->usernameColumn, $username)
+                     ->update($this->tableName, [$this->activeColumn => 0]);
+    }
+
+    /**
+     * Protected end user process
+     */
+    protected function endUserProcessAndRedirect($redirectUrl, $time)
+    {
+        $this->cookieClass ->delete($this->usernameColumn);
+        $this->cookieClass ->delete($this->passwordColumn);
+        $this->sessionClass->delete($this->usernameColumn);
+
+        new Redirect((string) $redirectUrl, $time);
     }
 }
