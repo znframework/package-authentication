@@ -55,12 +55,59 @@ class ForgotPassword extends UserExtends
      */
     public function do(String $email = NULL, String $returnLinkPath = NULL) : Bool
     {
-        $email          = Properties::$parameters['email']        ?? $email;
-        $verification   = Properties::$parameters['verification'] ?? NULL;
-        $returnLinkPath = Properties::$parameters['returnLink']   ?? $returnLinkPath;
+        $this->controlPropertiesParameters($email, $verification, $returnLinkPath);
 
-        Properties::$parameters = [];
+        $row = $this->getUserDataRowByEmail($email);
 
+        if( isset($row->{$this->usernameColumn}) )
+        {
+            if( ! empty($this->verificationColumn) )
+            {
+                if( $verification !== $row->{$this->verificationColumn} )
+                {
+                    return $this->setErrorMessage('verificationOrEmailError');
+                }
+            }
+            
+            if( ! IS::url($returnLinkPath) )
+            {
+                $returnLinkPath = URL::site($returnLinkPath);
+            }
+
+            $newPassword    = $this->createRandomNewPassword();
+            $encodePassword = $this->getEncryptionPassword($newPassword);
+            $templateData   = 
+            [
+                'usernameColumn' => $row->{$this->usernameColumn},
+                'newPassword'    => $newPassword,
+                'returnLinkPath' => $returnLinkPath
+            ];
+
+            if( $this->sendForgotPasswordEmail($email, $this->setForgotPasswordEmailBodyTemplate($templateData)) )
+            {
+                if( $this->updateUserPassword($email, $encodePassword) )
+                {
+                    return $this->setSuccessMessage('forgotPasswordSuccess');
+                }
+
+                return $this->setErrorMessage('updateError');
+            }
+            else
+            {
+                return $this->setErrorMessage('emailError');
+            }
+        }
+        else
+        {
+            return $this->setErrorMessage('forgotPasswordError');
+        }
+    }
+
+    /**
+     * Protected get user data row by email
+     */
+    protected function getUserDataRowByEmail($email)
+    {
         if( ! empty($this->emailColumn) )
         {
             $this->dbClass->where($this->emailColumn, $email);
@@ -70,70 +117,64 @@ class ForgotPassword extends UserExtends
             $this->dbClass->where($this->usernameColumn, $email);
         }
 
-        $row = $this->dbClass->get($this->tableName)->row();
+        return $this->dbClass->get($this->tableName)->row();
+    }
 
-        if( isset($row->{$this->usernameColumn}) )
+    /**
+     * Protected create random new password
+     */
+    protected function createRandomNewPassword()
+    {
+        return Encode\RandomPassword::create(10);
+    }
+
+    /**
+     * Protected set forgot passward email body template
+     */
+    protected function setForgotPasswordEmailBodyTemplate($data)
+    {
+        return Inclusion\Template::use('UserEmail/ForgotPassword', $data, true);
+    }
+
+    /**
+     * Protected send forgot password email
+     */
+    protected function sendForgotPasswordEmail($receiver, $message)
+    {
+        return Singleton::class('ZN\Email\Sender')
+                        ->sender($this->senderMail, $this->senderName)
+                        ->receiver($receiver, $receiver)
+                        ->subject($this->getLang['newYourPassword'])
+                        ->content($message)
+                        ->send();
+    }
+
+    /**
+     * Protected update user password
+     */
+    protected function updateUserPassword($email, $password)
+    {
+        if( ! empty($this->emailColumn) )
         {
-            if( ! empty($this->verificationColumn) )
-            {
-                if( $verification !== $row->{$this->verificationColumn} )
-                {
-                    return ! Properties::$error = $this->getLang['verificationOrEmailError'];
-                }
-            }
-            
-            if( ! IS::url($returnLinkPath) )
-            {
-                $returnLinkPath = URL::site($returnLinkPath);
-            }
-
-            $newPassword    = Encode\RandomPassword::create(10);
-            $encodePassword = ! empty($this->encodeType) 
-                              ? Encode\Type::create($newPassword, $this->encodeType) 
-                              : $newPassword;
-
-            $templateData = array
-            (
-                'usernameColumn' => $row->{$this->usernameColumn},
-                'newPassword'    => $newPassword,
-                'returnLinkPath' => $returnLinkPath
-            );
-
-            $message = Inclusion\Template::use('UserEmail/ForgotPassword', $templateData, true);
-
-            $emailClass = Singleton::class('ZN\Email\Sender');
-
-            $emailClass->sender($this->senderMail, $this->senderName)
-                       ->receiver($email, $email)
-                       ->subject($this->getLang['newYourPassword'])
-                       ->content($message);
-
-            if( $emailClass->send() )
-            {
-                if( ! empty($this->emailColumn) )
-                {
-                    $this->dbClass->where($this->emailColumn, $email, 'and');
-                }
-                else
-                {
-                    $this->dbClass->where($this->usernameColumn, $email, 'and');
-                }
-
-                if( $this->dbClass->update($this->tableName, [$this->passwordColumn => $encodePassword]) )
-                {
-                    return Properties::$success = $this->getLang['forgotPasswordSuccess'];
-                }
-
-                return ! Properties::$error = $this->getLang['updateError'];
-            }
-            else
-            {
-                return ! Properties::$error = $this->getLang['emailError'];
-            }
+            $this->dbClass->where($this->emailColumn, $email, 'and');
         }
         else
         {
-            return ! Properties::$error = $this->getLang['forgotPasswordError'];
+            $this->dbClass->where($this->usernameColumn, $email, 'and');
         }
+
+        return $this->dbClass->update($this->tableName, [$this->passwordColumn => $password]);
+    }
+
+    /**
+     * Protected control properties parameters
+     */
+    protected function controlPropertiesParameters(&$email, &$verification, &$returnLinkPath)
+    {
+        $email          = Properties::$parameters['email']        ?? $email;
+        $verification   = Properties::$parameters['verification'] ?? NULL;
+        $returnLinkPath = Properties::$parameters['returnLink']   ?? $returnLinkPath;
+
+        Properties::$parameters = [];
     }
 }

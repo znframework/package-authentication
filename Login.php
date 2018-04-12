@@ -9,8 +9,6 @@
  * @author  Ozan UYKUN [ozan@znframework.com]
  */
 
-use ZN\Cryptography\Encode;
-
 class Login extends UserExtends
 {
     /**
@@ -66,38 +64,27 @@ class Login extends UserExtends
      */
     public function do(String $username = NULL, String $password = NULL, $rememberMe = false) : Bool
     {
-        $username   = Properties::$parameters['username'] ?? $username;
-        $password   = Properties::$parameters['password'] ?? $password;
-        $rememberMe = Properties::$parameters['remember'] ?? $rememberMe;
-
-        Properties::$parameters = [];
+        $this->controlPropertiesParameters($username, $password, $rememberMe);
 
         if( ! is_scalar($rememberMe) )
         {
             $rememberMe = false;
         }
 
-        $password   = ! empty($this->encodeType) ? Encode\Type::create($password, $this->encodeType) : $password;
+        $password = $this->getEncryptionPassword($password);
 
         $this->_multiUsernameColumns($username);
 
-        $r = $this->dbClass->where($this->usernameColumn, $username)
-               ->get($this->tableName)
-               ->row();
+        $r = $this->getUserTableByUsername($username)->row();
 
         if( ! isset($r->{$this->passwordColumn}) )
         {
-            return ! Properties::$error = $this->getLang['loginError'];
+            return $this->setErrorMessage('loginError');
         }
-
-        $passwordControl   = $r->{$this->passwordColumn};
-        $bannedControl     = '';
-        $activationControl = '';
 
         if( ! empty($this->bannedColumn) )
         {
-            $banned = $this->bannedColumn ;
-            $bannedControl = $r->$banned ;
+            $bannedControl = $r->{$this->bannedColumn};
         }
 
         if( ! empty($this->activationColumn) )
@@ -105,40 +92,35 @@ class Login extends UserExtends
             $activationControl = $r->{$this->activationColumn};
         }
 
-        if( ! empty($r->{$this->usernameColumn}) && $passwordControl == $password )
+        if( ! empty($r->{$this->usernameColumn}) && $r->{$this->passwordColumn} == $password )
         {
             if( ! empty($this->bannedColumn) && ! empty($bannedControl) )
             {
-                return ! Properties::$error = $this->getLang['bannedError'];
+                return $this->setErrorMessage('bannedError');
             }
 
             if( ! empty($this->activationColumn) && empty($activationControl) )
             {
-                return ! Properties::$error = $this->getLang['activationError'];
+                return $this->setErrorMessage('activationError');
             }
 
-            $this->sessionClass->insert($this->usernameColumn, $username);
-            $this->sessionClass->insert($this->passwordColumn, $password);
+            $this->startUserSession($username, $password);
 
             if( ! empty($rememberMe) )
             {
-                if( $this->cookieClass->select($this->usernameColumn) !== $username )
-                {
-                    $this->cookieClass->insert($this->usernameColumn, $username);
-                    $this->cookieClass->insert($this->passwordColumn, $password);
-                }
+               $this->startPermanentUserSessionWithCookie($username, $password);
             }
 
             if( ! empty($this->activeColumn) )
             {
-                $this->dbClass->where($this->usernameColumn, $username)->update($this->tableName, [$this->activeColumn  => 1]);
+                $this->setUserStateActive($username);
             }
 
-            return Properties::$success = $this->getLang['loginSuccess'];
+            return $this->setSuccessMessage('loginSuccess');
         }
         else
         {
-            return ! Properties::$error = $this->getLang['loginError'];
+            return $this->setErrorMessage('loginError');
         }
     }
 
@@ -151,35 +133,22 @@ class Login extends UserExtends
      */
     public function is() : Bool
     {
-        $getUserData = (new Data)->get($this->tableName);
+        $getUserData = $this->getUserData();
 
         if( ! empty($this->bannedColumn) && ! empty($getUserData->{$this->bannedColumn}) )
         {
-             (new Logout)->do();
+            $this->logout();
         }
 
-        $cUsername  = $this->cookieClass->select($this->usernameColumn);
-        $cPassword  = $this->cookieClass->select($this->passwordColumn);
-        $result     = NULL;
-
-        if( ! empty($cUsername) && ! empty($cPassword) )
-        {
-            $result = $this->dbClass->where($this->usernameColumn, $cUsername, 'and')
-                        ->where($this->passwordColumn, $cPassword)
-                        ->get($this->tableName)
-                        ->totalRows();
-        }
+        $this->rememberUsernameAndPassword($cUsername, $cPassword);
 
         if( isset($getUserData->{$this->usernameColumn}) )
         {
             $isLogin = true;
         }
-        elseif( ! empty($result) )
+        elseif( $this->userExists($cUsername, $cPassword) )
         {
-            $this->sessionClass->insert($this->usernameColumn, $cUsername);
-            $this->sessionClass->insert($this->passwordColumn, $cPassword);
-
-            $isLogin = true;
+            $isLogin = $this->startUserSession($cUsername, $cPassword);
         }
         else
         {
@@ -187,5 +156,90 @@ class Login extends UserExtends
         }
 
         return $isLogin;
+    }
+
+    /**
+     * Protected user exists
+     */
+    protected function userExists($username, $password)
+    {
+        if( ! empty($username) && ! empty($password) )
+        {
+            return $this->dbClass->where($this->usernameColumn, $username, 'and')
+                                 ->where($this->passwordColumn, $password)
+                                 ->get($this->tableName)
+                                 ->totalRows();
+        }
+        
+        return false;
+    }
+
+    /**
+     * Protected remember username and password
+     */
+    protected function rememberUsernameAndPassword(&$username, &$password)
+    {
+        $username = $this->cookieClass->select($this->usernameColumn);
+        $password = $this->cookieClass->select($this->passwordColumn);
+    }
+
+     /**
+     * Protected set user state active
+     */
+    protected function setUserStateActive($username)
+    {
+        $this->dbClass->where($this->usernameColumn, $username)
+                     ->update($this->tableName, [$this->activeColumn => 1]);
+    }
+
+    /**
+     * Protected start user session
+     */
+    protected function startUserSession($username, $password)
+    {
+        $this->sessionClass->insert($this->usernameColumn, $username);
+        $this->sessionClass->insert($this->passwordColumn, $password);
+
+        return true;
+    }
+
+    /**
+     * Protected start permanent user session with cookie
+     */
+    protected function startPermanentUserSessionWithCookie($username, $password)
+    {
+        if( $this->cookieClass->select($this->usernameColumn) !== $username )
+        {
+            $this->cookieClass->insert($this->usernameColumn, $username);
+            $this->cookieClass->insert($this->passwordColumn, $password);
+        }
+    }
+
+    /**
+     * Protected get user data
+     */
+    protected function getUserData()
+    {
+        return (new Data)->get($this->tableName);
+    }
+
+    /**
+     * Protected logout
+     */
+    protected function logout()
+    {
+        (new Logout)->do();
+    }
+
+    /**
+     * Protected control properties parameters
+     */
+    protected function controlPropertiesParameters(&$username, &$password, &$rememberMe)
+    {
+        $username   = Properties::$parameters['username'] ?? $username;
+        $password   = Properties::$parameters['password'] ?? $password;
+        $rememberMe = Properties::$parameters['remember'] ?? $rememberMe;
+
+        Properties::$parameters = [];
     }
 }
