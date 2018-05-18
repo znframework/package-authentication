@@ -200,6 +200,22 @@ class Register extends UserExtends
     }
 
     /**
+     * Sets activation email
+     * 
+     * 5.7.3[added]
+     * 
+     * @param string $message
+     * 
+     * @return Register
+     */
+    public function setActivationEmail(String $message) : Register
+    {
+        Properties::$parameters['setActivationEmail'] = $message;
+
+        return $this;
+    }
+
+    /**
      * protected activation
      * 
      * @param string $user
@@ -225,7 +241,17 @@ class Register extends UserExtends
             'pass' => $pass
         ];
 
-        $message = Inclusion\Template::use('UserEmail/Activation', $templateData, true);
+        # 5.7.3[added]
+        # Sets activation email content
+        if( isset(Properties::$parameters['setActivationEmail']) )
+        {
+            $message = $this->replaceActivationEmailData(Properties::$parameters['setActivationEmail'], $templateData);
+        }
+        # Default activation email template
+        else
+        {
+            $message = Inclusion\Template::use('UserEmail/Activation', $templateData, true);
+        }
 
         $user = $email ?? $user;
 
@@ -244,6 +270,24 @@ class Register extends UserExtends
         {
             return $this->setErrorMessage('emailError');
         }
+    }
+
+    /**
+     * Protected replace activation email data
+     */
+    protected function replaceActivationEmailData(String $data, Array $replace)
+    {
+        $preg = 
+        [
+            '/\{user\}/' => $replace['user'],
+			'/\{pass\}/' => $replace['pass']
+        ];
+
+		return preg_replace_callback('/\[(.*?)\]/', function($match) use($replace)
+		{
+			return $replace['url'] . $match[1];
+			
+		}, preg_replace(array_keys($preg), array_values($preg), $data));
     }
 
     /**
