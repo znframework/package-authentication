@@ -23,14 +23,22 @@ class Register extends UserExtends
      * Auto login.
      * 
      * @param mixed $autoLogin = true
-     * 
-     * @return Register
      */
-    public function autoLogin($autoLogin = true) : Register
+    public function autoLogin($autoLogin = true)
     {
         Properties::$parameters['autoLogin'] = $autoLogin;
+    }
 
-        return $this;
+    /**
+     * Sets activation email
+     * 
+     * 5.7.3[added]
+     * 
+     * @param string $message
+     */
+    public function setActivationEmail(String $message)
+    {
+        Properties::$setActivationEmail = $message;
     }
 
     /**
@@ -200,22 +208,6 @@ class Register extends UserExtends
     }
 
     /**
-     * Sets activation email
-     * 
-     * 5.7.3[added]
-     * 
-     * @param string $message
-     * 
-     * @return Register
-     */
-    public function setActivationEmail(String $message) : Register
-    {
-        Properties::$parameters['setActivationEmail'] = $message;
-
-        return $this;
-    }
-
-    /**
      * protected activation
      * 
      * @param string $user
@@ -243,9 +235,9 @@ class Register extends UserExtends
 
         # 5.7.3[added]
         # Sets activation email content
-        if( isset(Properties::$parameters['setActivationEmail']) )
+        if( ! empty(Properties::$setActivationEmail) )
         {
-            $message = $this->replaceActivationEmailData(Properties::$parameters['setActivationEmail'], $templateData);
+            $message = $this->replaceActivationEmailData($templateData);
         }
         # Default activation email template
         else
@@ -275,8 +267,12 @@ class Register extends UserExtends
     /**
      * Protected replace activation email data
      */
-    protected function replaceActivationEmailData(String $data, Array $replace)
+    protected function replaceActivationEmailData(Array $replace)
     {
+        $data = Properties::$setActivationEmail;
+
+        Properties::$setActivationEmail = NULL;
+
         $preg = 
         [
             '/\{user\}/' => $replace['user'],
