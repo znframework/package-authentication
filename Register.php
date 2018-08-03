@@ -14,7 +14,6 @@ use ZN\Base;
 use ZN\Singleton;
 use ZN\Request\URL;
 use ZN\Request\URI;
-use ZN\Request\Method;
 use ZN\Response\Redirect;
 
 class Register extends UserExtends
@@ -127,7 +126,7 @@ class Register extends UserExtends
     {
         # Return link values.
         # 5.7.3[added]
-        if( is_scalar($$userUriKey) )
+        if( is_scalar($userUriKey) )
         {
             $user = URI::get($userUriKey); 
         }
